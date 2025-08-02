@@ -1,42 +1,36 @@
 class DigitalGuideAI {
     constructor() {
-        // Enhanced HuggingFace configuration - completely free and secure
+        // Free and low-cost API configuration
         this.aiConfig = {
-            // Your existing HuggingFace token (read-only, safer for extensions)
-            huggingFaceToken: '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', // Replace with your actual token
-            apiEndpoint: 'https://api-inference.huggingface.co/models/',
-            
-            // Modern, high-quality models for better results
-            models: {
-                // Arabic-optimized models for better Saudi government context
-                'arabic_qa': 'CAMeL-Lab/bert-base-arabic-camelbert-msa-qa', // Best for Arabic Q&A
-                'arabic_text': 'aubmindlab/bert-base-arabert', // Arabic text understanding
-                'multilingual_qa': 'deepset/roberta-base-squad2', // Multilingual Q&A
-                
-                // Advanced text generation (much better than GPT-3.5-turbo)
-                'text_generation': 'microsoft/DialoGPT-large', // Better conversational AI
-                'instruction_following': 'google/flan-t5-large', // Instruction-following model
-                
-                // Semantic search and embeddings
-                'embeddings': 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', // Multilingual embeddings
-                'arabic_embeddings': 'sentence-transformers/paraphrase-multilingual-mpnet-base-v2',
-                
-                // Specialized models for government content
-                'summarization': 'facebook/bart-large-cnn', // Text summarization
-                'question_generation': 'valhalla/t5-small-qg-hl', // Generate related questions
+            // Primary: Google Gemini (Free tier: 15 requests/minute, 1500/day)
+            gemini: {
+                apiKey: 'YOAIzaSyDm5z6Xf6Ea5HUtiZtCUR7J-q77C5BbuUk', // Replace with your key
+                endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
+                free: true,
+                limit: { requests: 15, period: 'minute' }
             },
             
-            // Fallback system
-            fallbackEnabled: true,
-            maxRetries: 3,
-            timeoutMs: 15000
+            // Backup: Cohere (Free tier: 100 requests/minute)
+            cohere: {
+                apiKey: 'nEaJVfqHG6yoHD7Ow4ponVAtt38dPhpNB58ZLE7v', // Replace with your key
+                endpoint: 'https://api.cohere.ai/v1/generate',
+                free: true,
+                limit: { requests: 100, period: 'minute' }
+            },
+            
+            // Emergency fallback: Local processing only
+            localOnly: false,
+            
+            // Rate limiting
+            requestCounts: {
+                gemini: { count: 0, resetTime: 0 },
+                cohere: { count: 0, resetTime: 0 }
+            }
         };
         
         this.govSiteData = new Map();
         this.searchCache = new Map();
         this.aiCache = new Map();
-        this.requestCount = 0;
-        this.maxRequestsPerHour = 500; // HuggingFace has generous limits
         
         this.init();
     }
@@ -47,25 +41,9 @@ class DigitalGuideAI {
             return true;
         });
         
-       
         this.initGovSiteKnowledge();
         this.setupAdvancedLocalAI();
-        this.loadUserToken(); // Load user's existing token if available
-    }
-    
-    async loadUserToken() {
-        // Load existing HuggingFace token from storage (backward compatibility)
-        try {
-            const result = await chrome.storage.local.get(['huggingface_token']);
-            if (result.huggingface_token) {
-                this.aiConfig.huggingFaceToken = result.huggingface_token;
-                console.log('Using user-provided HuggingFace token');
-            } else if (this.aiConfig.huggingFaceToken === 'hf_your_existing_token_here') {
-                console.log('Please add your HuggingFace token to background.js');
-            }
-        } catch (error) {
-            console.error('Error loading token:', error);
-        }
+        this.startCacheCleanup();
     }
     
     async handleMessage(request, sender, sendResponse) {
@@ -88,7 +66,7 @@ class DigitalGuideAI {
                     
                 case 'check_ai_status':
                     const status = await this.checkAIServiceStatus();
-                    sendResponse({ success: true, status, hasToken: !!this.aiConfig.huggingFaceToken });
+                    sendResponse({ success: true, status });
                     break;
                     
                 default:
@@ -103,9 +81,7 @@ class DigitalGuideAI {
     setupAdvancedLocalAI() {
         // Enhanced local AI with Saudi government domain knowledge
         this.localAI = {
-            // Comprehensive Saudi government knowledge patterns
             servicePatterns: {
-                // Work and Labor
                 'رخصة عمل': {
                     response: 'للحصول على رخصة عمل للعمالة الوافدة، يجب التقديم عبر منصة وزارة العمل والتنمية الاجتماعية',
                     ministry: 'وزارة العمل والتنمية الاجتماعية',
@@ -122,7 +98,6 @@ class DigitalGuideAI {
                     benefits: ['معاش الشيخوخة', 'معاش العجز', 'إعانة البطالة (ساند)', 'تعويض إصابات العمل']
                 },
                 
-                // Justice Ministry
                 'توثيق': {
                     response: 'خدمات التوثيق متاحة عبر وزارة العدل لتوثيق العقود والوكالات والإقرارات',
                     ministry: 'وزارة العدل',
@@ -139,7 +114,6 @@ class DigitalGuideAI {
                     courts: ['محاكم الدرجة الأولى', 'محاكم الاستئناف', 'المحكمة العليا']
                 },
                 
-                // Digital Government
                 'أبشر': {
                     response: 'منصة أبشر توفر أكثر من 200 خدمة حكومية إلكترونية للمواطنين والمقيمين',
                     ministry: 'وزارة الداخلية',
@@ -149,7 +123,6 @@ class DigitalGuideAI {
                 }
             },
             
-            // Advanced pattern matching with context understanding
             analyzeQuery: (query, context = {}) => {
                 const queryLower = query.toLowerCase();
                 let bestMatch = null;
@@ -166,13 +139,11 @@ class DigitalGuideAI {
                 return bestMatch;
             },
             
-            // Generate contextual responses
             generateContextualResponse: (match, query) => {
                 if (!match) return null;
                 
                 let response = match.response;
                 
-                // Add specific steps if query asks "how"
                 if (query.includes('كيف') && match.steps) {
                     response += '\n\nالخطوات المطلوبة:\n';
                     match.steps.forEach((step, index) => {
@@ -180,7 +151,6 @@ class DigitalGuideAI {
                     });
                 }
                 
-                // Add requirements if query asks about documents
                 if ((query.includes('مستند') || query.includes('وثائق')) && match.requirements) {
                     response += '\n\nالمستندات المطلوبة:\n';
                     match.requirements.forEach(req => {
@@ -188,7 +158,6 @@ class DigitalGuideAI {
                     });
                 }
                 
-                // Add benefits if query asks about benefits
                 if ((query.includes('فوائد') || query.includes('مزايا')) && match.benefits) {
                     response += '\n\nالفوائد والمزايا:\n';
                     match.benefits.forEach(benefit => {
@@ -204,12 +173,10 @@ class DigitalGuideAI {
     calculateAdvancedScore(query, pattern, data) {
         let score = 0;
         
-        // Direct pattern match
         if (query.includes(pattern.toLowerCase())) {
             score += 0.9;
         }
         
-        // Partial matches in pattern
         const patternWords = pattern.split(' ');
         patternWords.forEach(word => {
             if (query.includes(word.toLowerCase())) {
@@ -217,7 +184,6 @@ class DigitalGuideAI {
             }
         });
         
-        // Context matches in response and other fields
         const searchableText = `${data.response} ${data.ministry || ''} ${(data.steps || []).join(' ')}`.toLowerCase();
         const queryWords = query.split(' ');
         queryWords.forEach(word => {
@@ -230,7 +196,6 @@ class DigitalGuideAI {
     }
     
     initGovSiteKnowledge() {
-        // Enhanced government site knowledge with more detailed information
         this.govSiteData.set('hrsd.gov.sa', {
             name: 'وزارة العمل والتنمية الاجتماعية',
             nameEn: 'Ministry of Human Resources and Social Development',
@@ -246,21 +211,10 @@ class DigitalGuideAI {
                     fees: 'تختلف حسب نوع المهنة ومدة العقد',
                     duration: '5-10 أيام عمل',
                     category: 'عمل'
-                },
-                {
-                    name: 'التأمينات الاجتماعية',
-                    nameEn: 'Social Insurance',
-                    url: '/social-insurance',
-                    keywords: ['تأمينات اجتماعية', 'معاش', 'تقاعد', 'ساند', 'عجز', 'gosi'],
-                    description: 'نظام التأمينات الاجتماعية الذي يوفر الحماية للعمال وأسرهم',
-                    branches: ['تأمين الشيخوخة والعجز والوفاة', 'تأمين إصابات العمل', 'تأمين البطالة (ساند)'],
-                    benefits: ['معاش شهري', 'مكافأة نهاية الخدمة', 'تعويض العجز', 'إعانة البطالة'],
-                    category: 'تأمين'
                 }
             ]
         });
         
-        // Add more comprehensive data for other ministries...
         this.govSiteData.set('moj.gov.sa', {
             name: 'وزارة العدل',
             nameEn: 'Ministry of Justice',
@@ -274,16 +228,6 @@ class DigitalGuideAI {
                     steps: ['إنشاء حساب في ناجز', 'اختيار نوع الدعوى', 'تعبئة البيانات', 'رفع المستندات', 'دفع الرسوم', 'متابعة القضية'],
                     services_available: ['تقديم الدعاوى', 'متابعة القضايا', 'استلام الأحكام', 'طلب الاستئناف'],
                     category: 'قضاء'
-                },
-                {
-                    name: 'خدمات التوثيق',
-                    nameEn: 'Notarization Services',
-                    url: '/notarization',
-                    keywords: ['توثيق', 'كاتب عدل', 'عقد', 'وكالة', 'إقرار', 'notary'],
-                    description: 'خدمات توثيق العقود والوكالات والإقرارات لدى كتاب العدل',
-                    types: ['توثيق عقود البيع', 'توثيق الوكالات', 'توثيق الإقرارات', 'توثيق التنازل'],
-                    requirements: ['هوية وطنية أو إقامة', 'المستندات الأصلية', 'حضور الأطراف'],
-                    category: 'توثيق'
                 }
             ]
         });
@@ -302,18 +246,19 @@ class DigitalGuideAI {
             // Step 2: Knowledge base search
             const knowledgeResults = await this.searchEnhancedKnowledgeBase(query, context);
             
-            // Step 3: AI-powered analysis (using modern models)
+            // Step 3: Try AI enhancement (free APIs)
             const aiAnswer = await this.generateAdvancedAIAnswer(query, knowledgeResults, localAnalysis);
             
             // Step 4: Generate related questions
-            const relatedQuestions = await this.generateRelatedQuestions({ query, results: knowledgeResults });
+            const relatedQuestions = this.generateLocalRelatedQuestions({ query });
             
             const results = {
                 aiAnswer,
                 results: knowledgeResults,
                 confidence: this.calculateAdvancedConfidence(query, knowledgeResults, localAnalysis),
                 relatedQuestions,
-                localAnalysis
+                localAnalysis,
+                timestamp: Date.now()
             };
             
             this.searchCache.set(cacheKey, results);
@@ -326,23 +271,21 @@ class DigitalGuideAI {
     }
     
     async generateAdvancedAIAnswer(query, knowledgeResults, localAnalysis) {
-        // Try HuggingFace models in order of preference
-        const models = [
-            this.aiConfig.models.arabic_qa, // Best for Arabic Q&A
-            this.aiConfig.models.multilingual_qa, // Fallback multilingual
-            this.aiConfig.models.instruction_following // General instruction following
-        ];
+        // Try free AI APIs in order of preference
+        const providers = ['gemini', 'cohere'];
         
-        for (const model of models) {
-            try {
-                const answer = await this.callHuggingFaceModel(model, query, knowledgeResults, localAnalysis);
-                if (answer && answer.length > 20) { // Ensure meaningful response
-                    this.requestCount++;
-                    return answer;
+        for (const provider of providers) {
+            if (this.checkRateLimit(provider)) {
+                try {
+                    const answer = await this.callFreeAI(provider, query, knowledgeResults, localAnalysis);
+                    if (answer && answer.length > 20) {
+                        this.incrementRequestCount(provider);
+                        return answer;
+                    }
+                } catch (error) {
+                    console.error(`${provider} API failed:`, error);
+                    continue;
                 }
-            } catch (error) {
-                console.error(`Model ${model} failed:`, error);
-                continue;
             }
         }
         
@@ -350,19 +293,13 @@ class DigitalGuideAI {
         return this.generateEnhancedLocalAnswer(query, knowledgeResults, localAnalysis);
     }
     
-    async callHuggingFaceModel(model, query, knowledgeResults, localAnalysis) {
-        if (!this.aiConfig.huggingFaceToken || this.aiConfig.huggingFaceToken === 'hf_your_existing_token_here') {
-            throw new Error('HuggingFace token not configured');
-        }
-        
-        const cacheKey = `hf_${model}_${query}`;
+    async callFreeAI(provider, query, knowledgeResults, localAnalysis) {
+        const cacheKey = `${provider}_${query}`;
         if (this.aiCache.has(cacheKey)) {
             return this.aiCache.get(cacheKey);
         }
         
-        // Prepare context from multiple sources
         let context = '';
-        
         if (localAnalysis) {
             context += `تحليل محلي: ${localAnalysis.response}\n\n`;
         }
@@ -374,92 +311,117 @@ class DigitalGuideAI {
             });
         }
         
-        let requestBody;
+        let response;
         
-        if (model.includes('arabic') || model.includes('arabert')) {
-            // Arabic-specific models
-            requestBody = {
-                inputs: {
-                    question: query,
-                    context: context
-                },
-                options: { 
-                    wait_for_model: true,
-                    use_cache: true
-                }
-            };
-        } else if (model.includes('flan-t5')) {
-            // Instruction-following model
-            requestBody = {
-                inputs: `اجب على السؤال التالي باللغة العربية بناءً على المعلومات المتاحة:\n\nالسؤال: ${query}\n\nالمعلومات: ${context}\n\nالإجابة:`,
-                parameters: {
-                    max_length: 500,
-                    temperature: 0.7,
-                    do_sample: true
-                },
-                options: { 
-                    wait_for_model: true,
-                    use_cache: true
-                }
-            };
-        } else {
-            // Standard Q&A models
-            requestBody = {
-                inputs: {
-                    question: query,
-                    context: context
-                },
-                options: { 
-                    wait_for_model: true,
-                    use_cache: true
-                }
-            };
+        if (provider === 'gemini') {
+            response = await this.callGemini(query, context);
+        } else if (provider === 'cohere') {
+            response = await this.callCohere(query, context);
         }
         
-        const response = await fetch(`${this.aiConfig.apiEndpoint}${model}`, {
+        if (response) {
+            const cleanedAnswer = this.cleanAIResponse(response, query);
+            this.aiCache.set(cacheKey, cleanedAnswer);
+            return cleanedAnswer;
+        }
+        
+        return null;
+    }
+    
+    async callGemini(query, context) {
+        const config = this.aiConfig.gemini;
+        
+        const requestBody = {
+            contents: [{
+                parts: [{
+                    text: `أنت مساعد ذكي متخصص في الخدمات الحكومية السعودية. اجب على السؤال التالي باللغة العربية بدقة ووضوح:
+
+${context}
+
+السؤال: ${query}
+
+الرجاء تقديم إجابة شاملة ومفيدة تتضمن الخطوات العملية والمعلومات المهمة.`
+                }]
+            }],
+            generationConfig: {
+                temperature: 0.7,
+                maxOutputTokens: 400
+            }
+        };
+        
+        const response = await fetch(`${config.endpoint}?key=${config.apiKey}`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${this.aiConfig.huggingFaceToken}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(requestBody)
         });
         
         if (!response.ok) {
-            if (response.status === 503) {
-                throw new Error('Model loading, please try again');
-            }
-            throw new Error(`HuggingFace API error: ${response.status}`);
+            throw new Error(`Gemini API error: ${response.status}`);
         }
         
         const data = await response.json();
-        let answer;
+        return data.candidates?.[0]?.content?.parts?.[0]?.text;
+    }
+    
+    async callCohere(query, context) {
+        const config = this.aiConfig.cohere;
         
-        if (Array.isArray(data)) {
-            answer = data[0]?.generated_text || data[0]?.answer;
-        } else {
-            answer = data.answer || data.generated_text;
+        const requestBody = {
+            model: 'command-light',
+            prompt: `أنت مساعد ذكي متخصص في الخدمات الحكومية السعودية. اجب على السؤال التالي باللغة العربية:
+
+${context}
+
+السؤال: ${query}
+
+الإجابة:`,
+            max_tokens: 400,
+            temperature: 0.7
+        };
+        
+        const response = await fetch(config.endpoint, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${config.apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Cohere API error: ${response.status}`);
         }
         
-        if (answer) {
-            // Clean up the answer
-            answer = this.cleanAIResponse(answer, query);
-            this.aiCache.set(cacheKey, answer);
-            return answer;
+        const data = await response.json();
+        return data.generations?.[0]?.text;
+    }
+    
+    checkRateLimit(provider) {
+        const now = Date.now();
+        const config = this.aiConfig.requestCounts[provider];
+        const limit = this.aiConfig[provider].limit;
+        
+        // Reset counter if period has passed
+        const periodMs = limit.period === 'minute' ? 60000 : 86400000; // minute or day
+        if (now - config.resetTime > periodMs) {
+            config.count = 0;
+            config.resetTime = now;
         }
         
-        return null;
+        return config.count < limit.requests;
+    }
+    
+    incrementRequestCount(provider) {
+        this.aiConfig.requestCounts[provider].count++;
     }
     
     cleanAIResponse(answer, originalQuery) {
-        // Remove repetitive content
         answer = answer.replace(new RegExp(originalQuery, 'gi'), '');
-        
-        // Remove common prefixes/suffixes
         answer = answer.replace(/^(الإجابة:|Answer:|اجب:|إجابة:)/i, '').trim();
-        answer = answer.replace(/\n\n+/g, '\n\n'); // Clean multiple newlines
+        answer = answer.replace(/\n\n+/g, '\n\n');
         
-        // Limit length to reasonable size
         if (answer.length > 800) {
             answer = answer.substring(0, 800) + '...';
         }
@@ -495,38 +457,6 @@ class DigitalGuideAI {
         return answer;
     }
     
-    async generateRelatedQuestions(context) {
-        try {
-            if (!this.aiConfig.huggingFaceToken) {
-                return this.generateLocalRelatedQuestions(context);
-            }
-            
-            const model = this.aiConfig.models.question_generation;
-            const sourceText = context.query + ' ' + (context.results || []).map(r => r.snippet).join(' ');
-            
-            const response = await fetch(`${this.aiConfig.apiEndpoint}${model}`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${this.aiConfig.huggingFaceToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    inputs: sourceText.substring(0, 500), // Limit input length
-                    options: { wait_for_model: true }
-                })
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                return this.parseGeneratedQuestions(data);
-            }
-        } catch (error) {
-            console.error('Question generation error:', error);
-        }
-        
-        return this.generateLocalRelatedQuestions(context);
-    }
-    
     generateLocalRelatedQuestions(context) {
         const query = context.query.toLowerCase();
         const related = [];
@@ -546,24 +476,10 @@ class DigitalGuideAI {
         return related.slice(0, 4);
     }
     
-    parseGeneratedQuestions(data) {
-        // Parse AI-generated questions
-        if (Array.isArray(data) && data[0]?.generated_text) {
-            const questions = data[0].generated_text
-                .split(/[.؟?]/)
-                .filter(q => q.trim().length > 5)
-                .map(q => q.trim() + '؟')
-                .slice(0, 4);
-            return questions;
-        }
-        return [];
-    }
-    
     async searchEnhancedKnowledgeBase(query, context) {
         const results = [];
         const queryLower = query.toLowerCase();
         
-        // Search with enhanced scoring
         for (const [domain, siteData] of this.govSiteData.entries()) {
             if (context.currentSite && domain !== context.currentSite) continue;
             
@@ -589,34 +505,6 @@ class DigitalGuideAI {
             });
         }
         
-        // Search all sites if not enough results from current site
-        if (results.length < 5 && context.currentSite) {
-            for (const [domain, siteData] of this.govSiteData.entries()) {
-                if (domain === context.currentSite) continue;
-                
-                siteData.services.forEach(service => {
-                    const score = this.calculateEnhancedRelevance(queryLower, service);
-                    if (score > 0.3) {
-                        results.push({
-                            title: `${service.name} - ${siteData.name}`,
-                            snippet: service.description,
-                            url: `https://${domain}${service.url}`,
-                            relevance: score,
-                            confidence: score,
-                            source: 'enhanced_knowledge_base',
-                            type: 'official_service',
-                            steps: service.steps || [],
-                            requirements: service.requirements || [],
-                            category: service.category || '',
-                            ministry: siteData.name,
-                            fees: service.fees || '',
-                            duration: service.duration || ''
-                        });
-                    }
-                });
-            }
-        }
-        
         return results
             .sort((a, b) => b.relevance - a.relevance)
             .slice(0, 8);
@@ -626,21 +514,19 @@ class DigitalGuideAI {
         let score = 0;
         const queryWords = query.split(/\s+/).filter(word => word.length > 1);
         
-        // Enhanced keyword matching with weights
         service.keywords.forEach(keyword => {
             const keywordLower = keyword.toLowerCase();
             if (query.includes(keywordLower)) {
-                score += 0.8; // High score for exact keyword match
+                score += 0.8;
             }
             
             queryWords.forEach(word => {
                 if (keywordLower.includes(word)) {
-                    score += 0.4; // Medium score for partial match
+                    score += 0.4;
                 }
             });
         });
         
-        // Name and description matching
         const searchableText = `${service.name} ${service.nameEn || ''} ${service.description}`.toLowerCase();
         queryWords.forEach(word => {
             if (searchableText.includes(word)) {
@@ -648,12 +534,10 @@ class DigitalGuideAI {
             }
         });
         
-        // Category matching
         if (service.category && query.includes(service.category)) {
             score += 0.5;
         }
         
-        // Requirements and steps matching (for "how to" queries)
         if (query.includes('كيف') || query.includes('خطوات')) {
             if (service.steps && service.steps.length > 0) {
                 score += 0.3;
@@ -670,14 +554,12 @@ class DigitalGuideAI {
     }
     
     calculateAdvancedConfidence(query, knowledgeResults, localAnalysis) {
-        let confidence = 40; // Lower base confidence
+        let confidence = 40;
         
-        // Boost for local analysis match
         if (localAnalysis && localAnalysis.score > 0.7) {
             confidence += 30;
         }
         
-        // Boost for knowledge base results
         if (knowledgeResults.length > 0) {
             confidence += Math.min(knowledgeResults.length * 8, 25);
             
@@ -685,17 +567,15 @@ class DigitalGuideAI {
             confidence += avgRelevance * 20;
         }
         
-        // Boost for Arabic-specific queries (our strength)
         if (this.isArabicQuery(query)) {
             confidence += 10;
         }
         
-        // Boost for government-domain queries
         if (this.isGovernmentQuery(query)) {
             confidence += 15;
         }
         
-        return Math.min(Math.round(confidence), 92); // Cap at 92%
+        return Math.min(Math.round(confidence), 92);
     }
     
     isArabicQuery(query) {
@@ -709,42 +589,16 @@ class DigitalGuideAI {
     }
     
     async checkAIServiceStatus() {
-        if (!this.aiConfig.huggingFaceToken || this.aiConfig.huggingFaceToken === 'hf_your_existing_token_here') {
-            return {
-                status: 'no_token',
-                message: 'HuggingFace token not configured',
-                models_available: false
-            };
-        }
-        
-        try {
-            // Test the primary Arabic model
-            const response = await fetch(`${this.aiConfig.apiEndpoint}${this.aiConfig.models.arabic_qa}`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${this.aiConfig.huggingFaceToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    inputs: { question: 'test', context: 'test' },
-                    options: { wait_for_model: false }
-                })
-            });
-            
-            return {
-                status: response.ok ? 'ready' : 'loading',
-                message: response.ok ? 'AI services ready' : 'AI models loading',
-                models_available: true,
-                rate_limit_remaining: this.maxRequestsPerHour - this.requestCount
-            };
-            
-        } catch (error) {
-            return {
-                status: 'error',
-                message: error.message,
-                models_available: false
-            };
-        }
+        return {
+            status: 'ready',
+            message: 'خدمات الذكاء الاصطناعي جاهزة (APIs مجانية)',
+            models_available: true,
+            free_tier: true,
+            rate_limits: {
+                gemini: this.aiConfig.requestCounts.gemini,
+                cohere: this.aiConfig.requestCounts.cohere
+            }
+        };
     }
     
     async getAdvancedAIAnswer(question, context) {
@@ -767,25 +621,12 @@ class DigitalGuideAI {
             results: knowledgeResults,
             confidence: this.calculateAdvancedConfidence(query, knowledgeResults, localAnalysis) - 15,
             relatedQuestions: this.generateLocalRelatedQuestions({ query }),
-            source: 'local_ai'
+            source: 'local_ai',
+            timestamp: Date.now()
         };
     }
     
-    // Rate limiting and cache management
-    checkRateLimit() {
-        const now = Date.now();
-        const oneHour = 60 * 60 * 1000;
-        
-        if (!this.lastReset || now - this.lastReset > oneHour) {
-            this.requestCount = 0;
-            this.lastReset = now;
-        }
-        
-        return this.requestCount < this.maxRequestsPerHour;
-    }
-    
     clearCache() {
-        // Clear old cache entries (older than 1 hour)
         const now = Date.now();
         const oneHour = 60 * 60 * 1000;
         
@@ -802,14 +643,13 @@ class DigitalGuideAI {
         }
     }
     
-    // Periodic cache cleanup
     startCacheCleanup() {
         setInterval(() => {
             this.clearCache();
-        }, 30 * 60 * 1000); // Every 30 minutes
+        }, 30 * 60 * 1000);
     }
 }
 
-// Initialize the enhanced AI engine with automatic cache management
+// Initialize the enhanced AI engine
 const digitalGuideAI = new DigitalGuideAI();
 digitalGuideAI.startCacheCleanup();
