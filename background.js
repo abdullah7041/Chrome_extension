@@ -4,7 +4,7 @@ class DigitalGuideAI {
         this.aiConfig = {
             // Primary: Google Gemini (Free tier: 15 requests/minute, 1500/day)
             gemini: {
-                apiKey: 'YOAIzaSyDm5z6Xf6Ea5HUtiZtCUR7J-q77C5BbuUk', // Replace with your key
+                apiKey: 'YOUR_GEMINI_API_KEY', // Replace with your key
                 endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
                 free: true,
                 limit: { requests: 15, period: 'minute' }
@@ -12,7 +12,7 @@ class DigitalGuideAI {
             
             // Backup: Cohere (Free tier: 100 requests/minute)
             cohere: {
-                apiKey: 'nEaJVfqHG6yoHD7Ow4ponVAtt38dPhpNB58ZLE7v', // Replace with your key
+                apiKey: 'YOUR_COHERE_API_KEY', // Replace with your key
                 endpoint: 'https://api.cohere.ai/v1/generate',
                 free: true,
                 limit: { requests: 100, period: 'minute' }
@@ -653,3 +653,4 @@ ${context}
 // Initialize the enhanced AI engine
 const digitalGuideAI = new DigitalGuideAI();
 digitalGuideAI.startCacheCleanup();
+
