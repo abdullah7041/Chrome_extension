@@ -4,15 +4,15 @@ class DigitalGuideAI {
         this.aiConfig = {
             // Primary: Google Gemini (Free tier: 15 requests/minute, 1500/day)
             gemini: {
-                apiKey: 'YOUR_GEMINI_API_KEY', // Replace with your key
-                endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
+                apiKey: 'AIzaSyDm5z6Xf6Ea5HUtiZtCUR7J-q77C5BbuUk', // Replace with your actual key
+                endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
                 free: true,
                 limit: { requests: 15, period: 'minute' }
             },
             
             // Backup: Cohere (Free tier: 100 requests/minute)
             cohere: {
-                apiKey: 'YOUR_COHERE_API_KEY', // Replace with your key
+                apiKey: 'YOUR_COHERE_API_KEY', // Replace with your actual key
                 endpoint: 'https://api.cohere.ai/v1/generate',
                 free: true,
                 limit: { requests: 100, period: 'minute' }
@@ -331,71 +331,175 @@ class DigitalGuideAI {
     async callGemini(query, context) {
         const config = this.aiConfig.gemini;
         
+        // Validate API key
+        if (!config.apiKey || config.apiKey === 'YOUR_GEMINI_API_KEY') {
+            throw new Error('Gemini API key not configured');
+        }
+        
+        // Ensure text length is reasonable for the free tier
+        const maxContextLength = 300;
+        const maxQueryLength = 150;
+        const truncatedContext = context.length > maxContextLength ? context.substring(0, maxContextLength) + '...' : context;
+        const truncatedQuery = query.length > maxQueryLength ? query.substring(0, maxQueryLength) + '...' : query;
+        
         const requestBody = {
             contents: [{
                 parts: [{
-                    text: `أنت مساعد ذكي متخصص في الخدمات الحكومية السعودية. اجب على السؤال التالي باللغة العربية بدقة ووضوح:
+                    text: `أنت خبير متخصص في الخدمات الحكومية السعودية ومساعد خدمة عملاء من الطراز الأول. مهمتك إرضاء المستخدم بتقديم إجابات شاملة ومفيدة تغنيه عن البحث.
 
-${context}
+قدراتك:
+- خبرة عميقة في جميع الوزارات والهيئات الحكومية السعودية
+- تقديم روابط مباشرة ومفيدة
+- حساب الرسوم والمدد الزمنية
+- توضيح الخطوات بالتفصيل
+- ذكر المستندات المطلوبة بدقة
+- تقديم أرقام التواصل ومواعيد العمل
 
-السؤال: ${query}
+المعلومات المتوفرة:
+${truncatedContext}
 
-الرجاء تقديم إجابة شاملة ومفيدة تتضمن الخطوات العملية والمعلومات المهمة.`
+استفسار المستخدم: ${truncatedQuery}
+
+قدم إجابة شاملة تتضمن:
+1. الإجابة الأساسية واضحة ومباشرة
+2. الخطوات العملية المطلوبة (إن وجدت)
+3. الرسوم المتوقعة والمدة الزمنية
+4. الروابط أو أرقام التواصل المفيدة
+5. نصائح إضافية مفيدة
+
+اكتب باللغة العربية وبأسلوب احترافي ومفيد:`
                 }]
             }],
             generationConfig: {
-                temperature: 0.7,
-                maxOutputTokens: 400
+                temperature: 0.2,
+                maxOutputTokens: 400,
+                topP: 0.9,
+                topK: 40,
+                stopSequences: ["المستخدم:", "السؤال:", "الاستفسار:"]
             }
         };
         
-        const response = await fetch(`${config.endpoint}?key=${config.apiKey}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-        });
-        
-        if (!response.ok) {
-            throw new Error(`Gemini API error: ${response.status}`);
+        try {
+            const response = await fetch(`${config.endpoint}?key=${config.apiKey}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Gemini API error details:', response.status, errorText);
+                
+                // Handle specific error cases
+                if (response.status === 404) {
+                    throw new Error('Gemini model not found - API may have changed');
+                } else if (response.status === 403) {
+                    throw new Error('Gemini API access denied - check your API key');
+                } else if (response.status === 429) {
+                    throw new Error('Gemini API rate limit exceeded');
+                }
+                
+                throw new Error(`Gemini API error: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.error) {
+                throw new Error(`Gemini API error: ${data.error.message}`);
+            }
+            
+            if (!data.candidates || data.candidates.length === 0) {
+                throw new Error('No response generated by Gemini');
+            }
+            
+            const candidate = data.candidates[0];
+            if (candidate.finishReason === 'SAFETY') {
+                throw new Error('Response blocked by safety filters');
+            }
+            
+            return candidate.content?.parts?.[0]?.text;
+            
+        } catch (fetchError) {
+            console.error('Gemini fetch error:', fetchError);
+            this.logAPIError('gemini', fetchError, query);
+            throw fetchError;
         }
-        
-        const data = await response.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text;
     }
     
     async callCohere(query, context) {
         const config = this.aiConfig.cohere;
         
-        const requestBody = {
-            model: 'command-light',
-            prompt: `أنت مساعد ذكي متخصص في الخدمات الحكومية السعودية. اجب على السؤال التالي باللغة العربية:
-
-${context}
-
-السؤال: ${query}
-
-الإجابة:`,
-            max_tokens: 400,
-            temperature: 0.7
-        };
-        
-        const response = await fetch(config.endpoint, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${config.apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-        });
-        
-        if (!response.ok) {
-            throw new Error(`Cohere API error: ${response.status}`);
+        // Validate API key
+        if (!config.apiKey || config.apiKey === 'YOUR_COHERE_API_KEY') {
+            throw new Error('Cohere API key not configured');
         }
         
-        const data = await response.json();
-        return data.generations?.[0]?.text;
+        // Ensure text length is reasonable
+        const maxLength = 400;
+        const truncatedContext = context.length > maxLength ? context.substring(0, maxLength) + '...' : context;
+        const truncatedQuery = query.length > 150 ? query.substring(0, 150) + '...' : query;
+        
+        const requestBody = {
+            model: 'command',
+            prompt: `أنت خبير خدمة عملاء متميز متخصص في الخدمات الحكومية السعودية. هدفك الأساسي هو إرضاء المستخدم وتوفير كل ما يحتاجه من معلومات دون الحاجة للبحث في مكان آخر.
+
+خبراتك تشمل:
+• معرفة شاملة بجميع الوزارات والهيئات الحكومية
+• تقديم روابط مباشرة ومفيدة للخدمات
+• حساب الرسوم والمدد الزمنية بدقة
+• توضيح المتطلبات والمستندات
+• أرقام التواصل ومواعيد العمل
+
+المعلومات المرجعية: ${truncatedContext}
+
+استفسار العميل: ${truncatedQuery}
+
+قدم خدمة عملاء متميزة تتضمن:
+- إجابة شاملة ومباشرة
+- تفاصيل عملية (خطوات، رسوم، مدد)
+- روابط أو معلومات تواصل مفيدة
+- نصائح تطبيقية
+
+الإجابة (باللغة العربية، احترافية ومفصلة):`,
+            max_tokens: 300,
+            temperature: 0.3,
+            p: 0.9,
+            k: 0,
+            stop_sequences: ["العميل:", "الاستفسار:", "السؤال:", "\n---"],
+            return_likelihoods: 'NONE'
+        };
+        
+        try {
+            const response = await fetch(config.endpoint, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${config.apiKey}`,
+                    'Content-Type': 'application/json',
+                    'Cohere-Version': '2022-12-06'
+                },
+                body: JSON.stringify(requestBody)
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Cohere API error details:', response.status, errorText);
+                throw new Error(`Cohere API error: ${response.status} - ${errorText}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.message) {
+                throw new Error(`Cohere API error: ${data.message}`);
+            }
+            
+            return data.generations?.[0]?.text?.trim();
+            
+        } catch (fetchError) {
+            console.error('Cohere fetch error:', fetchError);
+            throw fetchError;
+        }
     }
     
     checkRateLimit(provider) {
@@ -418,12 +522,23 @@ ${context}
     }
     
     cleanAIResponse(answer, originalQuery) {
+        if (!answer) return '';
+        
+        // Remove query echoing
         answer = answer.replace(new RegExp(originalQuery, 'gi'), '');
-        answer = answer.replace(/^(الإجابة:|Answer:|اجب:|إجابة:)/i, '').trim();
+        
+        // Remove common prefixes
+        answer = answer.replace(/^(الإجابة:|Answer:|اجب:|إجابة:|الجواب:)/i, '').trim();
+        
+        // Clean up multiple newlines
         answer = answer.replace(/\n\n+/g, '\n\n');
         
-        if (answer.length > 800) {
-            answer = answer.substring(0, 800) + '...';
+        // Remove leading/trailing whitespace
+        answer = answer.trim();
+        
+        // Limit length
+        if (answer.length > 600) {
+            answer = answer.substring(0, 600) + '...';
         }
         
         return answer;
@@ -438,21 +553,44 @@ ${context}
         
         if (!answer && knowledgeResults.length > 0) {
             const topResult = knowledgeResults[0];
-            answer = `بناءً على البحث في الخدمات الحكومية الرسمية: ${topResult.snippet}`;
+            answer = `📋 **${topResult.ministry}**\n\n`;
+            answer += `${topResult.snippet}\n\n`;
             
             if (topResult.steps && topResult.steps.length > 0) {
-                answer += '\n\nالخطوات المطلوبة:\n';
+                answer += `**📝 الخطوات المطلوبة:**\n`;
                 topResult.steps.forEach((step, index) => {
                     answer += `${index + 1}. ${step}\n`;
                 });
+                answer += '\n';
             }
+            
+            if (topResult.requirements && topResult.requirements.length > 0) {
+                answer += `**📄 المستندات المطلوبة:**\n`;
+                topResult.requirements.forEach(req => {
+                    answer += `• ${req}\n`;
+                });
+                answer += '\n';
+            }
+            
+            if (topResult.fees) {
+                answer += `**💰 الرسوم:** ${topResult.fees}\n`;
+            }
+            
+            if (topResult.duration) {
+                answer += `**⏱️ مدة الإنجاز:** ${topResult.duration}\n`;
+            }
+            
+            answer += `\n**🔗 الرابط الرسمي:** ${topResult.url}`;
         }
         
         if (!answer) {
-            answer = `عذراً، لم أتمكن من العثور على معلومات محددة حول "${query}". يرجى تجربة كلمات أخرى أو زيارة المواقع الحكومية مباشرة.`;
+            answer = `عذراً، لم أعثر على معلومات محددة حول "${query}".\n\n`;
+            answer += `**💡 نصائح للبحث:**\n`;
+            answer += `• جرب كلمات أخرى أو مرادفات\n`;
+            answer += `• تأكد من كتابة الخدمة بوضوح\n`;
+            answer += `• يمكنك زيارة المواقع الحكومية مباشرة\n\n`;
+            answer += `**📞 للاستفسار:** اتصل على 19993 (الخط الموحد للخدمات الحكومية)`;
         }
-        
-        answer += '\n\nيمكنك العثور على المزيد من التفاصيل في الروابط الرسمية أدناه.';
         
         return answer;
     }
@@ -589,16 +727,38 @@ ${context}
     }
     
     async checkAIServiceStatus() {
-        return {
+        const status = {
             status: 'ready',
-            message: 'خدمات الذكاء الاصطناعي جاهزة (APIs مجانية)',
-            models_available: true,
+            message: 'خدمات الذكاء الاصطناعي جاهزة',
+            models_available: false,
             free_tier: true,
             rate_limits: {
                 gemini: this.aiConfig.requestCounts.gemini,
                 cohere: this.aiConfig.requestCounts.cohere
-            }
+            },
+            errors: []
         };
+        
+        // Check Gemini API key
+        if (!this.aiConfig.gemini.apiKey || this.aiConfig.gemini.apiKey === 'YOUR_GEMINI_API_KEY') {
+            status.errors.push('Gemini API key not configured');
+        } else {
+            status.models_available = true;
+        }
+        
+        // Check Cohere API key
+        if (!this.aiConfig.cohere.apiKey || this.aiConfig.cohere.apiKey === 'YOUR_COHERE_API_KEY') {
+            status.errors.push('Cohere API key not configured');
+        } else {
+            status.models_available = true;
+        }
+        
+        if (status.errors.length > 0) {
+            status.status = 'limited';
+            status.message = 'خدمات الذكاء الاصطناعي محدودة - يرجى تكوين مفاتيح API';
+        }
+        
+        return status;
     }
     
     async getAdvancedAIAnswer(question, context) {
@@ -606,6 +766,10 @@ ${context}
         const localAnalysis = this.localAI.analyzeQuery(question, context);
         
         return await this.generateAdvancedAIAnswer(question, results, localAnalysis);
+    }
+    
+    async generateRelatedQuestions(context) {
+        return this.generateLocalRelatedQuestions(context);
     }
     
     fallbackToLocalAI(query, context) {
@@ -646,11 +810,94 @@ ${context}
     startCacheCleanup() {
         setInterval(() => {
             this.clearCache();
-        }, 30 * 60 * 1000);
+        }, 30 * 60 * 1000); // Clean cache every 30 minutes
+    }
+    
+    // Additional utility methods for better error handling
+    validateAPIKeys() {
+        const issues = [];
+        
+        if (!this.aiConfig.gemini.apiKey || this.aiConfig.gemini.apiKey === 'YOUR_GEMINI_API_KEY') {
+            issues.push('Gemini API key missing or not configured');
+        }
+        
+        if (!this.aiConfig.cohere.apiKey || this.aiConfig.cohere.apiKey === 'YOUR_COHERE_API_KEY') {
+            issues.push('Cohere API key missing or not configured');
+        }
+        
+        return {
+            valid: issues.length === 0,
+            issues: issues
+        };
+    }
+    
+    async testAPIConnection(provider) {
+        try {
+            if (provider === 'gemini') {
+                const response = await this.callGemini('test', 'Test connection');
+                return { success: true, response };
+            } else if (provider === 'cohere') {
+                const response = await this.callCohere('test', 'Test connection');
+                return { success: true, response };
+            }
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+    
+    // Enhanced logging for debugging
+    logAPIError(provider, error, query) {
+        console.group(`🚨 ${provider.toUpperCase()} API Error`);
+        console.error('Error:', error.message);
+        console.log('Query:', query);
+        console.log('Provider config:', this.aiConfig[provider]);
+        console.log('Rate limit status:', this.aiConfig.requestCounts[provider]);
+        console.groupEnd();
+    }
+    
+    // Method to reset rate limits (useful for testing)
+    resetRateLimits() {
+        Object.keys(this.aiConfig.requestCounts).forEach(provider => {
+            this.aiConfig.requestCounts[provider] = { count: 0, resetTime: 0 };
+        });
+        console.log('Rate limits reset for all providers');
+    }
+    
+    // Method to get available Gemini models (for debugging)
+    async getAvailableGeminiModels() {
+        const config = this.aiConfig.gemini;
+        if (!config.apiKey || config.apiKey === 'YOUR_GEMINI_API_KEY') {
+            return { error: 'API key not configured' };
+        }
+        
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${config.apiKey}`);
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            return { error: error.message };
+        }
+    }
+    
+    // Method to get detailed status for debugging
+    getDetailedStatus() {
+        return {
+            apiKeys: this.validateAPIKeys(),
+            rateLimits: this.aiConfig.requestCounts,
+            cacheStats: {
+                searchCache: this.searchCache.size,
+                aiCache: this.aiCache.size
+            },
+            govSiteData: this.govSiteData.size,
+            localAIPatterns: Object.keys(this.localAI.servicePatterns).length
+        };
     }
 }
 
 // Initialize the enhanced AI engine
 const digitalGuideAI = new DigitalGuideAI();
-digitalGuideAI.startCacheCleanup();
 
+// Export for testing purposes (if needed)
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = DigitalGuideAI;
+}
